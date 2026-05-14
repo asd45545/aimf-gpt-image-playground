@@ -893,7 +893,7 @@ export default function SettingsModal() {
       setConfirmDialog({
         title: '无法修改',
         message: '「Ai 魔方」是默认服务商，无法修改。',
-        action: undefined,
+        action: () => {},
       })
       return
     }
@@ -945,7 +945,7 @@ export default function SettingsModal() {
       setConfirmDialog({
         title: '无法删除',
         message: '「Ai 魔方」是默认服务商，无法删除。',
-        action: undefined,
+        action: () => {},
       })
       return
     }

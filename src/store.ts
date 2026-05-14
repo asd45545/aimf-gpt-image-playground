@@ -332,15 +332,15 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
   // 数据迁移：将旧的 fal/aimf 配置转换为新的 aimf-shop 自定义服务商配置
   let migratedSettings = persisted.settings ?? currentState.settings
   if (migratedSettings && typeof migratedSettings === 'object') {
-    const settingsObj = migratedSettings as Record<string, unknown>
+    const settingsObj = migratedSettings as unknown as Record<string, unknown>
     
     // 检查是否有旧的 fal/aimf 配置需要迁移
     const hasLegacyFalConfig = 
-      settingsObj.baseUrl?.toString().includes('aimf') ||
-      settingsObj.baseUrl?.toString().includes('fal') ||
+      String(settingsObj.baseUrl || '').includes('aimf') ||
+      String(settingsObj.baseUrl || '').includes('fal') ||
       (Array.isArray(settingsObj.profiles) && settingsObj.profiles.some((p: any) => 
         p.provider === 'fal' || p.provider === 'aimf' || 
-        p.baseUrl?.includes('aimf') || p.baseUrl?.includes('fal')))
+        String(p.baseUrl || '').includes('aimf') || String(p.baseUrl || '').includes('fal')))
     
     if (hasLegacyFalConfig) {
       // 迁移 profiles
@@ -350,8 +350,8 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
             return {
               ...profile,
               provider: 'aimf-shop',
-              baseUrl: profile.baseUrl?.includes('://') ? profile.baseUrl : 'https://aimf.shop/v1',
-              model: profile.model?.includes('/') ? profile.model.split('/').pop() : (profile.model || 'gpt-image-2'),
+              baseUrl: String(profile.baseUrl || '').includes('://') ? profile.baseUrl : 'https://aimf.shop/v1',
+              model: String(profile.model || '').includes('/') ? String(profile.model).split('/').pop() : (profile.model || 'gpt-image-2'),
               name: profile.name === '新配置' ? 'Ai魔方' : profile.name
             }
           }
@@ -360,12 +360,11 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
       }
       
       // 确保 aimf-shop 自定义服务商存在
-      if (!Array.isArray(settingsObj.customProviders)) {
-        settingsObj.customProviders = []
-      }
-      const hasAimfProvider = settingsObj.customProviders.some((p: any) => p.id === 'aimf-shop')
+      const customProviders = Array.isArray(settingsObj.customProviders) ? settingsObj.customProviders as any[] : []
+      const hasAimfProvider = customProviders.some((p: any) => p.id === 'aimf-shop')
       if (!hasAimfProvider) {
-        settingsObj.customProviders.unshift(AIMF_SHOP_CONFIG)
+        customProviders.unshift(AIMF_SHOP_CONFIG)
+        settingsObj.customProviders = customProviders
       }
       
       // 确保默认配置是 aimf-shop
