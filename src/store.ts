@@ -10,7 +10,7 @@ import type {
   ExportData,
 } from './types'
 import { DEFAULT_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile, AIMF_SHOP_CONFIG } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -328,7 +328,56 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
   if (!persistedState || typeof persistedState !== 'object') return currentState
 
   const persisted = persistedState as Partial<AppState>
-  const settings = normalizeSettings(persisted.settings ?? currentState.settings)
+  
+  // 数据迁移：将旧的 fal/aimf 配置转换为新的 aimf-shop 自定义服务商配置
+  let migratedSettings = persisted.settings ?? currentState.settings
+  if (migratedSettings && typeof migratedSettings === 'object') {
+    const settingsObj = migratedSettings as Record<string, unknown>
+    
+    // 检查是否有旧的 fal/aimf 配置需要迁移
+    const hasLegacyFalConfig = 
+      settingsObj.baseUrl?.toString().includes('aimf') ||
+      settingsObj.baseUrl?.toString().includes('fal') ||
+      (Array.isArray(settingsObj.profiles) && settingsObj.profiles.some((p: any) => 
+        p.provider === 'fal' || p.provider === 'aimf' || 
+        p.baseUrl?.includes('aimf') || p.baseUrl?.includes('fal')))
+    
+    if (hasLegacyFalConfig) {
+      // 迁移 profiles
+      if (Array.isArray(settingsObj.profiles)) {
+        settingsObj.profiles = settingsObj.profiles.map((profile: any) => {
+          if (profile.provider === 'fal' || profile.provider === 'aimf') {
+            return {
+              ...profile,
+              provider: 'aimf-shop',
+              baseUrl: profile.baseUrl?.includes('://') ? profile.baseUrl : 'https://aimf.shop/v1',
+              model: profile.model?.includes('/') ? profile.model.split('/').pop() : (profile.model || 'gpt-image-2'),
+              name: profile.name === '新配置' ? 'Ai魔方' : profile.name
+            }
+          }
+          return profile
+        })
+      }
+      
+      // 确保 aimf-shop 自定义服务商存在
+      if (!Array.isArray(settingsObj.customProviders)) {
+        settingsObj.customProviders = []
+      }
+      const hasAimfProvider = settingsObj.customProviders.some((p: any) => p.id === 'aimf-shop')
+      if (!hasAimfProvider) {
+        settingsObj.customProviders.unshift(AIMF_SHOP_CONFIG)
+      }
+      
+      // 确保默认配置是 aimf-shop
+      const normalizedSettings = normalizeSettings(settingsObj)
+      const aimfProfile = normalizedSettings.profiles.find((p) => p.provider === 'aimf-shop')
+      if (aimfProfile) {
+        settingsObj.activeProfileId = aimfProfile.id
+      }
+    }
+  }
+  
+  const settings = normalizeSettings(migratedSettings)
   return {
     ...currentState,
     ...persisted,

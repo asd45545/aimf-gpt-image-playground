@@ -18,12 +18,13 @@ const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) ||
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
-export const DEFAULT_FAL_BASE_URL = 'https://aimf.shop'
-export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
+export const DEFAULT_AIMF_BASE_URL = 'https://aimf.shop/v1'
+export const DEFAULT_AIMF_MODEL = 'gpt-image-2'
+export const DEFAULT_AIMF_PROVIDER_ID = 'aimf-shop'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
 
-const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'aimf'])
+const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
   generationPath: 'images/generations',
   editPath: 'images/edits',
@@ -247,12 +248,69 @@ export function normalizeCustomProviderDefinition(input: unknown, usedIds = new 
   }
 }
 
+export const AIMF_SHOP_CONFIG: CustomProviderDefinition = {
+  id: DEFAULT_AIMF_PROVIDER_ID,
+  name: 'Ai魔方',
+  template: 'http-image',
+  submit: {
+    path: 'images/generations',
+    method: 'POST',
+    contentType: 'json',
+    body: {
+      model: '$profile.model',
+      prompt: '$prompt',
+      size: '$params.size',
+      quality: '$params.quality',
+      output_format: '$params.output_format',
+      moderation: '$params.moderation',
+      output_compression: '$params.output_compression',
+      n: '$params.n',
+    },
+    result: {
+      imageUrlPaths: ['data.*.url'],
+      b64JsonPaths: ['data.*.b64_json'],
+    },
+  },
+  editSubmit: {
+    path: 'images/edits',
+    method: 'POST',
+    contentType: 'multipart',
+    body: {
+      model: '$profile.model',
+      prompt: '$prompt',
+      size: '$params.size',
+      quality: '$params.quality',
+      output_format: '$params.output_format',
+      moderation: '$params.moderation',
+      output_compression: '$params.output_compression',
+      n: '$params.n',
+    },
+    files: [
+      { field: 'image[]', source: 'inputImages', array: true },
+      { field: 'mask', source: 'mask' },
+    ],
+    result: {
+      imageUrlPaths: ['data.*.url'],
+      b64JsonPaths: ['data.*.b64_json'],
+    },
+  },
+}
+
 export function normalizeCustomProviderDefinitions(input: unknown): CustomProviderDefinition[] {
   const usedIds = new Set<string>()
   const list = Array.isArray(input) ? input : []
-  return list
+  
+  const providers = list
     .map((item) => normalizeCustomProviderDefinition(item, usedIds))
     .filter((item): item is CustomProviderDefinition => Boolean(item))
+  
+  const hasAimfShop = providers.some(p => p.id === DEFAULT_AIMF_PROVIDER_ID)
+  if (!hasAimfShop) {
+    providers.unshift(AIMF_SHOP_CONFIG)
+    usedIds.add(DEFAULT_AIMF_PROVIDER_ID)
+  }
+  
+  return providers
 }
 
 export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
@@ -271,14 +329,14 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
   }
 }
 
-export function createDefaultFalProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
+export function createDefaultAimfProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
   return {
-    id: `fal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    name: '新配置',
-    provider: 'fal',
-    baseUrl: DEFAULT_FAL_BASE_URL,
+    id: `aimf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: 'Ai魔方',
+    provider: DEFAULT_AIMF_PROVIDER_ID,
+    baseUrl: DEFAULT_AIMF_BASE_URL,
     apiKey: '',
-    model: DEFAULT_FAL_MODEL,
+    model: DEFAULT_AIMF_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
     apiMode: 'images',
     codexCli: false,
@@ -301,27 +359,12 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   }
   const savedDraft = providerDrafts[provider]
 
-  if (provider === 'aimf') {
-    return {
-      ...profile,
-      provider,
-      baseUrl: savedDraft?.baseUrl ?? DEFAULT_FAL_BASE_URL,
-      model: savedDraft?.model ?? DEFAULT_FAL_MODEL,
-      apiMode: savedDraft?.apiMode ?? 'images',
-      codexCli: false,
-      apiProxy: false,
-      responseFormatB64Json: savedDraft?.responseFormatB64Json,
-      providerDrafts,
-    }
-  }
-
   if (customProvider) {
-    const shouldUseOpenAIDefaults = profile.provider === 'aimf'
     return {
       ...profile,
       provider: customProvider.id,
-      baseUrl: savedDraft?.baseUrl ?? (shouldUseOpenAIDefaults ? DEFAULT_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL),
-      model: savedDraft?.model ?? (shouldUseOpenAIDefaults ? DEFAULT_IMAGES_MODEL : profile.model || DEFAULT_IMAGES_MODEL),
+      baseUrl: savedDraft?.baseUrl ?? (customProvider.id === DEFAULT_AIMF_PROVIDER_ID ? DEFAULT_AIMF_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL),
+      model: savedDraft?.model ?? (customProvider.id === DEFAULT_AIMF_PROVIDER_ID ? DEFAULT_AIMF_MODEL : profile.model || DEFAULT_IMAGES_MODEL),
       apiMode: savedDraft?.apiMode ?? 'images',
       codexCli: false,
       apiProxy: false,
@@ -345,16 +388,16 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
 
 function normalizeProviderDraft(input: unknown, provider: ApiProvider, customProviderIds: Set<string>): ApiProfileProviderDraft {
   if (!isRecord(input)) return undefined
-  const fallback = provider === 'aimf' ? createDefaultFalProfile() : createDefaultOpenAIProfile()
+  const fallback = provider === DEFAULT_AIMF_PROVIDER_ID ? createDefaultAimfProfile() : createDefaultOpenAIProfile()
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl : undefined
   const model = typeof input.model === 'string' && input.model.trim() ? input.model : undefined
   const apiMode = input.apiMode === 'responses' ? 'responses' : input.apiMode === 'images' ? 'images' : undefined
-  const knownProvider = provider === 'aimf' || provider === 'openai' || customProviderIds.has(provider)
+  const knownProvider = provider === 'openai' || customProviderIds.has(provider)
   if (!knownProvider) return undefined
 
   return {
-    baseUrl: provider === 'aimf'
-      ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL
+    baseUrl: provider === DEFAULT_AIMF_PROVIDER_ID
+      ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_AIMF_BASE_URL
       : baseUrl,
     model,
     apiMode,
@@ -376,8 +419,8 @@ function normalizeProviderDrafts(input: unknown, customProviderIds: Set<string>)
 export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfile>, customProviderIds = new Set<string>()): ApiProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
-  const provider: ApiProvider = rawProvider === 'aimf' || customProviderIds.has(rawProvider) ? rawProvider : 'openai'
-  const defaults = provider === 'aimf' ? createDefaultFalProfile(fallback) : createDefaultOpenAIProfile(fallback)
+  const provider: ApiProvider = customProviderIds.has(rawProvider) ? rawProvider : 'openai'
+  const defaults = provider === DEFAULT_AIMF_PROVIDER_ID ? createDefaultAimfProfile(fallback) : createDefaultOpenAIProfile(fallback)
   const apiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
 
@@ -386,7 +429,7 @@ export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfil
     id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
     provider,
-    baseUrl: provider === 'aimf' ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_FAL_BASE_URL : rawBaseUrl,
+    baseUrl: provider === DEFAULT_AIMF_PROVIDER_ID ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_AIMF_BASE_URL : rawBaseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
@@ -415,6 +458,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
   const customProviderIds = new Set(customProviders.map((provider) => provider.id))
+  
+  const defaultAimfProfile = createDefaultAimfProfile()
   const legacyProfile = createDefaultOpenAIProfile({
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
@@ -425,12 +470,21 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
   })
-  const profiles = Array.isArray(record.profiles) && record.profiles.length
+  
+  let profiles = Array.isArray(record.profiles) && record.profiles.length
     ? record.profiles.map((profile) => normalizeApiProfile(profile, undefined, customProviderIds))
-    : [legacyProfile]
-  const activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
+    : [defaultAimfProfile]
+  
+  let activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
+  
+  const hasAimfProfile = profiles.some(p => p.provider === DEFAULT_AIMF_PROVIDER_ID)
+  if (!hasAimfProfile) {
+    profiles.unshift(defaultAimfProfile)
+    activeProfileId = defaultAimfProfile.id
+  }
+  
   const active = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
   return {
@@ -459,7 +513,6 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 }
 
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
-  if (provider === 'aimf') return 'aimf.shop'
   if (provider === 'openai') return 'OpenAI'
   return getCustomProviderDefinition(settings, provider)?.name ?? provider
 }
@@ -547,7 +600,7 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
 
 export function validateApiProfile(profile: ApiProfile): string | null {
   if (!profile.name.trim()) return '缺少名称'
-  if (profile.provider !== 'aimf' && !profile.baseUrl.trim()) return '缺少 API URL'
+  if (!profile.baseUrl.trim()) return '缺少 API URL'
   if (!profile.apiKey.trim()) return '缺少 API Key'
   if (!profile.model.trim()) return '缺少模型 ID'
   return null
@@ -711,14 +764,14 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
 }
 
 export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
-  baseUrl: DEFAULT_BASE_URL,
+  baseUrl: DEFAULT_AIMF_BASE_URL,
   apiKey: '',
-  model: DEFAULT_IMAGES_MODEL,
+  model: DEFAULT_AIMF_MODEL,
   timeout: DEFAULT_API_TIMEOUT,
   apiMode: 'images',
   codexCli: false,
-  apiProxy: DEFAULT_OPENAI_API_PROXY,
-  customProviders: [],
+  apiProxy: false,
+  customProviders: [AIMF_SHOP_CONFIG],
   clearInputAfterSubmit: false,
   persistInputOnRestart: true,
   reuseTaskApiProfileTemporarily: false,
