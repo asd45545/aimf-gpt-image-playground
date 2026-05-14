@@ -330,16 +330,15 @@ export default function SettingsModal() {
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
   const activeProviderUsesApiUrl = activeProviderIsOpenAICompatible
   const activeCustomProvider = draft.customProviders.find((provider) => provider.id === activeProfile.provider)
-  const defaultProviderOrder = ['openai', ...draft.customProviders.map(p => p.id)]
+  const defaultProviderOrder = [...draft.customProviders.map(p => p.id)]
   const providerOrder = draft.providerOrder || defaultProviderOrder
 
   const unorderedProviderOptions = [
-    { label: 'OpenAI 兼容接口', value: 'openai', draggable: true },
     ...draft.customProviders.map((provider) => ({
       label: provider.name,
       value: provider.id,
-      draggable: true,
-      actions: [
+      draggable: provider.id !== 'aimf-shop',
+      actions: provider.id === 'aimf-shop' ? [] : [
         { label: '编辑', onClick: () => openEditCustomProvider(provider) },
         {
           label: '删除',
@@ -646,7 +645,12 @@ export default function SettingsModal() {
 
   const createNewProfile = () => {
     setReusedTaskApiProfile(null)
-    const profile = createDefaultOpenAIProfile({ id: newId('openai'), name: '新配置' })
+    const defaultCustomProvider = draft.customProviders.find(p => p.id === 'aimf-shop') || draft.customProviders[0]
+    const profile = switchApiProfileProvider(
+      { ...createDefaultOpenAIProfile({ id: newId('profile'), name: '新配置' }) },
+      defaultCustomProvider ? defaultCustomProvider.id : 'openai',
+      defaultCustomProvider
+    )
     const nextDraft = normalizeSettings({ 
         ...draft, 
         profiles: [...draft.profiles, profile],
@@ -830,7 +834,7 @@ export default function SettingsModal() {
   }
 
   const handleProviderReorder = (sourceValue: string | number, targetValue: string | number, position: 'before' | 'after' | null) => {
-    const currentOrder = draft.providerOrder || ['openai', 'fal', ...draft.customProviders.map(p => p.id)]
+    const currentOrder = draft.providerOrder || [...draft.customProviders.map(p => p.id)]
     const sourceIndex = currentOrder.indexOf(String(sourceValue))
     const targetIndex = currentOrder.indexOf(String(targetValue))
     if (sourceIndex < 0 || targetIndex < 0) return
@@ -885,6 +889,14 @@ export default function SettingsModal() {
   }
 
   function openEditCustomProvider(provider: CustomProviderDefinition) {
+    if (provider.id === 'aimf-shop') {
+      setConfirmDialog({
+        title: '无法修改',
+        message: '「Ai 魔方」是默认服务商，无法修改。',
+        action: undefined,
+      })
+      return
+    }
     setEditingCustomProviderId(provider.id)
     setCustomProviderForm(customProviderToForm(provider))
     setShowCustomProviderImport(true)
@@ -894,6 +906,10 @@ export default function SettingsModal() {
   const saveCustomProvider = () => {
     try {
       const customProvider = buildCustomProviderFromForm()
+      if (editingCustomProviderId === 'aimf-shop') {
+        showToast('「Ai 魔方」是默认服务商，无法修改', 'error')
+        return
+      }
       if (editingCustomProviderId) {
         const nextDraft = normalizeSettings({
           ...draft,
@@ -925,20 +941,32 @@ export default function SettingsModal() {
   }
 
   function confirmDeleteCustomProvider(provider: CustomProviderDefinition) {
+    if (provider.id === 'aimf-shop') {
+      setConfirmDialog({
+        title: '无法删除',
+        message: '「Ai 魔方」是默认服务商，无法删除。',
+        action: undefined,
+      })
+      return
+    }
+    const remainingProviders = draft.customProviders.filter((p) => p.id !== provider.id)
+    const fallbackProvider = remainingProviders.length > 0 ? remainingProviders[0].name : null
     setConfirmDialog({
       title: '删除服务商',
-      message: `确定要删除自定义服务商「${provider.name}」吗？正在使用它的配置会切回 OpenAI 兼容接口。`,
-      action: () => deleteCustomProvider(provider),
+      message: `确定要删除自定义服务商「${provider.name}」吗？${fallbackProvider ? `正在使用它的配置会切回「${fallbackProvider}」。` : '这将是最后一个服务商，无法删除。'}`,
+      action: () => remainingProviders.length > 0 ? deleteCustomProvider(provider) : undefined,
     })
   }
 
   function deleteCustomProvider(provider: CustomProviderDefinition) {
     const providerId = provider.id
+    const remainingProviders = draft.customProviders.filter((provider) => provider.id !== providerId)
+    const fallbackProvider = remainingProviders.length > 0 ? remainingProviders[0].id : null
     const nextDraft = normalizeSettings({
       ...draft,
-      customProviders: draft.customProviders.filter((provider) => provider.id !== providerId),
+      customProviders: remainingProviders,
       profiles: draft.profiles.map((profile) =>
-        profile.provider === providerId ? switchApiProfileProvider(profile, 'openai') : profile,
+        profile.provider === providerId && fallbackProvider ? switchApiProfileProvider(profile, fallbackProvider, remainingProviders[0]) : profile,
       ),
     })
     commitSettings(nextDraft)
@@ -1536,13 +1564,11 @@ export default function SettingsModal() {
                   onChange={(e) => updateActiveProfile({ model: e.target.value })}
                   onBlur={(e) => commitActiveProfilePatch({ model: e.target.value })}
                   type="text"
-                  placeholder={activeProfile.provider === 'fal' ? DEFAULT_FAL_MODEL : getDefaultModelForMode(activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode)}
+                  placeholder={getDefaultModelForMode(activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode)}
                   className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
                 />
                 <div data-selectable-text className="mt-1.5 text-xs text-gray-500 dark:text-gray-500">
-                  {activeProfile.provider === 'fal' ? (
-                    <>当前适配 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_FAL_MODEL}</code>。</>
-                  ) : activeCustomProvider ? (
+                  {activeCustomProvider ? (
                     <>当前使用 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{activeCustomProvider.name}</code>。</>
                   ) : (activeProfile.apiMode ?? DEFAULT_SETTINGS.apiMode) === 'responses' ? (
                     <>Responses API 需要使用支持 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">image_generation</code> 工具的文本模型，例如 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-white/[0.06]">{DEFAULT_RESPONSES_MODEL}</code>。</>

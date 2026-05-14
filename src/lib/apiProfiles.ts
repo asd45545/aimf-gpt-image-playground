@@ -23,6 +23,7 @@ export const DEFAULT_AIMF_MODEL = 'gpt-image-2'
 export const DEFAULT_AIMF_PROVIDER_ID = 'aimf-shop'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
+export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
@@ -303,12 +304,12 @@ export function normalizeCustomProviderDefinitions(input: unknown): CustomProvid
   const providers = list
     .map((item) => normalizeCustomProviderDefinition(item, usedIds))
     .filter((item): item is CustomProviderDefinition => Boolean(item))
+    // 过滤掉输入中的 aimf-shop，确保只使用我们的默认配置
+    .filter(p => p.id !== DEFAULT_AIMF_PROVIDER_ID)
   
-  const hasAimfShop = providers.some(p => p.id === DEFAULT_AIMF_PROVIDER_ID)
-  if (!hasAimfShop) {
-    providers.unshift(AIMF_SHOP_CONFIG)
-    usedIds.add(DEFAULT_AIMF_PROVIDER_ID)
-  }
+  // 始终添加我们的默认 aimf-shop 配置到最前面
+  providers.unshift(AIMF_SHOP_CONFIG)
+  usedIds.add(DEFAULT_AIMF_PROVIDER_ID)
   
   return providers
 }
