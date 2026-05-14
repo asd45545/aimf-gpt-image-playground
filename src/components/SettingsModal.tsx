@@ -393,7 +393,7 @@ export default function SettingsModal() {
 
   useEffect(() => {
     setTimeoutInput(String(activeProfile.timeout))
-  }, [activeProfile.id, activeProfile.timeout])
+  }, [activeProfile.id, activeProfile.timeout, activeProfile.provider])
 
   const updateProfileMenuMaxHeight = useCallback(() => {
     if (!profileMenuTriggerRef.current) return
@@ -571,7 +571,17 @@ export default function SettingsModal() {
 
   const getDraftWithActiveProfilePatch = (patch: Partial<ApiProfile>) => ({
       ...draft,
-      profiles: draft.profiles.map((profile) => profile.id === activeProfile.id ? { ...profile, ...patch } : profile),
+      profiles: draft.profiles.map((profile) => {
+        if (profile.id === activeProfile.id) {
+          // 如果 patch 有 provider 字段（说明是完整的 profile 替换），直接用 patch
+          if ('provider' in patch) {
+            return patch as ApiProfile
+          }
+          // 否则做部分更新
+          return { ...profile, ...patch }
+        }
+        return profile
+      }),
     })
 
   const updateActiveProfile = (patch: Partial<ApiProfile>, commit = false) => {
@@ -864,15 +874,7 @@ export default function SettingsModal() {
 
     const provider = String(value) as ApiProfile['provider']
     const customProvider = draft.customProviders.find((item) => item.id === provider)
-    const newProfile = switchApiProfileProvider(activeProfile, provider, customProvider)
-    
-    const nextDraft = {
-      ...draft,
-      profiles: draft.profiles.map((p) => p.id === activeProfile.id ? newProfile : p),
-    }
-    setDraft(nextDraft)
-    commitSettings(nextDraft)
-    setTimeoutInput(String(newProfile.timeout))
+    updateActiveProfile(switchApiProfileProvider(activeProfile, provider, customProvider), true)
   }
 
   const updateCustomProviderForm = (patch: Partial<CustomProviderForm>) => {
