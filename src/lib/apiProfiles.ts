@@ -16,7 +16,7 @@ import { readRuntimeEnv } from './runtimeEnv'
 
 const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) || 'https://api.openai.com/v1'
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
-export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
+export const DEFAULT_IMAGES_MODEL = 'dall-e-3'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
 export const DEFAULT_AIMF_BASE_URL = 'https://aimf.shop/v1'
 export const DEFAULT_AIMF_MODEL = 'gpt-image-2'
@@ -361,11 +361,12 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   const savedDraft = providerDrafts[provider]
 
   if (customProvider) {
+    const isAimfShop = customProvider.id === DEFAULT_AIMF_PROVIDER_ID
     return {
       ...profile,
       provider: customProvider.id,
-      baseUrl: savedDraft?.baseUrl ?? (customProvider.id === DEFAULT_AIMF_PROVIDER_ID ? DEFAULT_AIMF_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL),
-      model: savedDraft?.model ?? (customProvider.id === DEFAULT_AIMF_PROVIDER_ID ? DEFAULT_AIMF_MODEL : profile.model || DEFAULT_IMAGES_MODEL),
+      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : DEFAULT_BASE_URL),
+      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : DEFAULT_IMAGES_MODEL),
       apiMode: savedDraft?.apiMode ?? 'images',
       codexCli: false,
       apiProxy: false,
