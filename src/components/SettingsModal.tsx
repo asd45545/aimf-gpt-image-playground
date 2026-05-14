@@ -864,7 +864,15 @@ export default function SettingsModal() {
 
     const provider = String(value) as ApiProfile['provider']
     const customProvider = draft.customProviders.find((item) => item.id === provider)
-    updateActiveProfile(switchApiProfileProvider(activeProfile, provider, customProvider), true)
+    const newProfile = switchApiProfileProvider(activeProfile, provider, customProvider)
+    
+    const nextDraft = {
+      ...draft,
+      profiles: draft.profiles.map((p) => p.id === activeProfile.id ? newProfile : p),
+    }
+    setDraft(nextDraft)
+    commitSettings(nextDraft)
+    setTimeoutInput(String(newProfile.timeout))
   }
 
   const updateCustomProviderForm = (patch: Partial<CustomProviderForm>) => {
