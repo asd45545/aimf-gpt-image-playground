@@ -362,11 +362,12 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
 
   if (customProvider) {
     const isAimfShop = customProvider.id === DEFAULT_AIMF_PROVIDER_ID
+    const shouldUseOpenAIDefaults = profile.provider === 'openai'
     return {
       ...profile,
       provider: customProvider.id,
-      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : DEFAULT_BASE_URL),
-      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : DEFAULT_IMAGES_MODEL),
+      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : (shouldUseOpenAIDefaults ? DEFAULT_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL)),
+      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : (shouldUseOpenAIDefaults ? DEFAULT_IMAGES_MODEL : profile.model || DEFAULT_IMAGES_MODEL)),
       apiMode: savedDraft?.apiMode ?? 'images',
       codexCli: false,
       apiProxy: false,
