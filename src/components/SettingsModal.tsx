@@ -330,10 +330,11 @@ export default function SettingsModal() {
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
   const activeProviderUsesApiUrl = activeProviderIsOpenAICompatible
   const activeCustomProvider = draft.customProviders.find((provider) => provider.id === activeProfile.provider)
-  const defaultProviderOrder = [...draft.customProviders.map(p => p.id)]
+  const defaultProviderOrder = ['openai', ...draft.customProviders.map(p => p.id)]
   const providerOrder = draft.providerOrder || defaultProviderOrder
 
   const unorderedProviderOptions = [
+    { label: 'OpenAI 兼容接口', value: 'openai', draggable: true },
     ...draft.customProviders.map((provider) => ({
       label: provider.name,
       value: provider.id,
