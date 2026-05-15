@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizeBaseUrl } from '../lib/api'
-import { isApiProxyAvailable, isApiProxyLocked, readClientDevProxyConfig } from '../lib/devProxy'
 import { useStore, exportData, importData, clearData } from '../store'
 import {
   createDefaultOpenAIProfile,
@@ -321,25 +320,19 @@ export default function SettingsModal() {
   const [copyImportUrlProfile, setCopyImportUrlProfile] = useState<ApiProfile | null>(null)
   const [copyImportUrlOptions, setCopyImportUrlOptions] = useState<CopyImportUrlOptions>(readCopyImportUrlOptions)
 
-  const apiProxyConfig = readClientDevProxyConfig()
-  const apiProxyAvailable = isApiProxyAvailable(apiProxyConfig)
-  const apiProxyLocked = isApiProxyLocked(apiProxyConfig)
   const activeProfile = draft.profiles.find((profile) => profile.id === draft.activeProfileId) ?? draft.profiles[0] ?? getActiveApiProfile(draft)
-  const apiProxyChecked = activeProfile.provider === 'openai' && (apiProxyLocked || activeProfile.apiProxy)
-  const apiProxyEnabled = apiProxyAvailable && activeProfile.provider === 'openai' && apiProxyChecked
   const activeProviderIsOpenAICompatible = isOpenAICompatibleProvider(draft, activeProfile.provider)
   const activeProviderUsesApiUrl = activeProviderIsOpenAICompatible
   const activeCustomProvider = draft.customProviders.find((provider) => provider.id === activeProfile.provider)
-  const defaultProviderOrder = ['openai', ...draft.customProviders.map(p => p.id)]
+  const defaultProviderOrder = draft.customProviders.map(p => p.id)
   const providerOrder = draft.providerOrder || defaultProviderOrder
 
   const unorderedProviderOptions = [
-    { label: 'OpenAI 兼容接口', value: 'openai', draggable: true },
     ...draft.customProviders.map((provider) => ({
       label: provider.name,
       value: provider.id,
-      draggable: provider.id !== 'aimf-shop',
-      actions: provider.id === 'aimf-shop' ? [] : [
+      draggable: true,
+      actions: (provider.id === 'aimf-shop' || provider.id === 'openai-compatible') ? [] : [
         { label: '编辑', onClick: () => openEditCustomProvider(provider) },
         {
           label: '删除',
@@ -887,10 +880,11 @@ export default function SettingsModal() {
   }
 
   function openEditCustomProvider(provider: CustomProviderDefinition) {
-    if (provider.id === 'aimf-shop') {
+    if (provider.id === 'aimf-shop' || provider.id === 'openai-compatible') {
+      const name = provider.id === 'aimf-shop' ? 'Ai 魔方' : 'OpenAI兼容接口'
       setConfirmDialog({
         title: '无法修改',
-        message: '「Ai 魔方」是默认服务商，无法修改。',
+        message: `「${name}」是默认服务商，无法修改。`,
         action: () => {},
       })
       return
@@ -935,10 +929,11 @@ export default function SettingsModal() {
   }
 
   function confirmDeleteCustomProvider(provider: CustomProviderDefinition) {
-    if (provider.id === 'aimf-shop') {
+    if (provider.id === 'aimf-shop' || provider.id === 'openai-compatible') {
+      const name = provider.id === 'aimf-shop' ? 'Ai 魔方' : 'OpenAI兼容接口'
       setConfirmDialog({
         title: '无法删除',
-        message: '「Ai 魔方」是默认服务商，无法删除。',
+        message: `「${name}」是默认服务商，无法删除。`,
         action: () => {},
       })
       return
@@ -956,7 +951,7 @@ export default function SettingsModal() {
       ...draft,
       customProviders: draft.customProviders.filter((provider) => provider.id !== providerId),
       profiles: draft.profiles.map((profile) =>
-        profile.provider === providerId ? switchApiProfileProvider(profile, 'openai') : profile,
+        profile.provider === providerId ? switchApiProfileProvider(profile, 'openai-compatible') : profile,
       ),
     })
     commitSettings(nextDraft)
@@ -1426,51 +1421,6 @@ export default function SettingsModal() {
                     )}
                   </div>
                 </label>
-              )}
-
-              {activeProfile.provider === 'openai' && (
-                <div className="block">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="block text-sm text-gray-600 dark:text-gray-300">Codex CLI 兼容模式</span>
-                    <button
-                      type="button"
-                      onClick={() => updateActiveProfile({ codexCli: !activeProfile.codexCli }, true)}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${activeProfile.codexCli ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      role="switch"
-                      aria-checked={activeProfile.codexCli}
-                      aria-label="Codex CLI 兼容模式"
-                    >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${activeProfile.codexCli ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-                    </button>
-                  </div>
-                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                    开启后应用 Codex CLI 实际支持的参数。支持查询参数覆盖：<code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">codexCli=true</code>。
-                  </div>
-                </div>
-              )}
-
-              {apiProxyAvailable && activeProfile.provider === 'openai' && (
-                <div className="block">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="block text-sm text-gray-600 dark:text-gray-300">API 代理</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!apiProxyLocked) updateActiveProfile({ apiProxy: !activeProfile.apiProxy }, true)
-                      }}
-                      disabled={apiProxyLocked}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${apiProxyChecked ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'} ${apiProxyLocked ? 'cursor-not-allowed opacity-70' : ''}`}
-                      role="switch"
-                      aria-checked={apiProxyChecked}
-                      aria-label="API 代理"
-                    >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${apiProxyChecked ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-                    </button>
-                  </div>
-                  <div data-selectable-text className="text-xs text-gray-500 dark:text-gray-500">
-                    {apiProxyLocked ? '当前部署已锁定 API 代理为开启，API URL 设置会被忽略。' : '当前部署提供同源代理时默认开启，可手动关闭。开启后用于解决浏览器跨域限制，API URL 设置会被忽略。'}
-                  </div>
-                </div>
               )}
 
               <div className="block">

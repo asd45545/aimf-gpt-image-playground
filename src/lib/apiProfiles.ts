@@ -21,6 +21,7 @@ export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
 export const DEFAULT_AIMF_BASE_URL = 'https://aimf.shop/v1'
 export const DEFAULT_AIMF_MODEL = 'gpt-image-2'
 export const DEFAULT_AIMF_PROVIDER_ID = 'aimf-shop'
+export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
@@ -297,6 +298,54 @@ export const AIMF_SHOP_CONFIG: CustomProviderDefinition = {
   },
 }
 
+export const OPENAI_COMPATIBLE_CONFIG: CustomProviderDefinition = {
+  id: DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID,
+  name: 'OpenAI兼容接口',
+  template: 'http-image',
+  submit: {
+    path: 'images/generations',
+    method: 'POST',
+    contentType: 'json',
+    body: {
+      model: '$profile.model',
+      prompt: '$prompt',
+      size: '$params.size',
+      quality: '$params.quality',
+      output_format: '$params.output_format',
+      moderation: '$params.moderation',
+      output_compression: '$params.output_compression',
+      n: '$params.n',
+    },
+    result: {
+      imageUrlPaths: ['data.*.url'],
+      b64JsonPaths: ['data.*.b64_json'],
+    },
+  },
+  editSubmit: {
+    path: 'images/edits',
+    method: 'POST',
+    contentType: 'multipart',
+    body: {
+      model: '$profile.model',
+      prompt: '$prompt',
+      size: '$params.size',
+      quality: '$params.quality',
+      output_format: '$params.output_format',
+      moderation: '$params.moderation',
+      output_compression: '$params.output_compression',
+      n: '$params.n',
+    },
+    files: [
+      { field: 'image[]', source: 'inputImages', array: true },
+      { field: 'mask', source: 'mask' },
+    ],
+    result: {
+      imageUrlPaths: ['data.*.url'],
+      b64JsonPaths: ['data.*.b64_json'],
+    },
+  },
+}
+
 export function normalizeCustomProviderDefinitions(input: unknown): CustomProviderDefinition[] {
   const usedIds = new Set<string>()
   const list = Array.isArray(input) ? input : []
@@ -304,12 +353,14 @@ export function normalizeCustomProviderDefinitions(input: unknown): CustomProvid
   const providers = list
     .map((item) => normalizeCustomProviderDefinition(item, usedIds))
     .filter((item): item is CustomProviderDefinition => Boolean(item))
-    // 过滤掉输入中的 aimf-shop，确保只使用我们的默认配置
-    .filter(p => p.id !== DEFAULT_AIMF_PROVIDER_ID)
+    // 过滤掉输入中的默认配置，确保只使用我们的默认配置
+    .filter(p => p.id !== DEFAULT_AIMF_PROVIDER_ID && p.id !== DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID)
   
-  // 始终添加我们的默认 aimf-shop 配置到最前面
+  // 始终添加我们的默认配置
   providers.unshift(AIMF_SHOP_CONFIG)
   usedIds.add(DEFAULT_AIMF_PROVIDER_ID)
+  providers.unshift(OPENAI_COMPATIBLE_CONFIG)
+  usedIds.add(DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID)
   
   return providers
 }
@@ -362,12 +413,12 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
 
   if (customProvider) {
     const isAimfShop = customProvider.id === DEFAULT_AIMF_PROVIDER_ID
-    const shouldUseOpenAIDefaults = profile.provider === 'openai'
+    const isOpenAICompatible = customProvider.id === DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID
     return {
       ...profile,
       provider: customProvider.id,
-      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : (shouldUseOpenAIDefaults ? DEFAULT_BASE_URL : profile.baseUrl || DEFAULT_BASE_URL)),
-      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : (shouldUseOpenAIDefaults ? DEFAULT_IMAGES_MODEL : profile.model || DEFAULT_IMAGES_MODEL)),
+      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : DEFAULT_BASE_URL),
+      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : DEFAULT_IMAGES_MODEL),
       apiMode: savedDraft?.apiMode ?? 'images',
       codexCli: false,
       apiProxy: false,
@@ -422,7 +473,7 @@ function normalizeProviderDrafts(input: unknown, customProviderIds: Set<string>)
 export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfile>, customProviderIds = new Set<string>()): ApiProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
-  const provider: ApiProvider = customProviderIds.has(rawProvider) ? rawProvider : 'openai'
+  const provider: ApiProvider = customProviderIds.has(rawProvider) ? rawProvider : DEFAULT_AIMF_PROVIDER_ID
   const defaults = provider === DEFAULT_AIMF_PROVIDER_ID ? createDefaultAimfProfile(fallback) : createDefaultOpenAIProfile(fallback)
   const apiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
   const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
