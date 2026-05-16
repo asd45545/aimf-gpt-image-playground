@@ -1411,6 +1411,19 @@ export default function SettingsModal() {
                       <span>支持通过查询参数覆盖：<code className="bg-gray-100 dark:bg-white/[0.06] px-1 py-0.5 rounded">?apiUrl=</code></span>
                     )}
                   </div>
+                  {activeProfile.provider === 'openai' && (
+                    <div data-selectable-text className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+                      API Key 申请地址：
+                      <a
+                        href="https://aimf.shop/register?channel=c_ymo1e8ud"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-600 underline"
+                      >
+                        点我跳转
+                      </a>
+                    </div>
+                  )}
                 </label>
               )}
 
