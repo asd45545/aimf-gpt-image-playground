@@ -4,7 +4,6 @@ import type {
   ApiProvider,
   AppSettings,
   CustomProviderContentType,
-  CustomProviderDefinition,
   CustomProviderFileMapping,
   CustomProviderPollMapping,
   CustomProviderRequestMethod,
@@ -14,17 +13,14 @@ import type {
 } from '../types'
 import { readRuntimeEnv } from './runtimeEnv'
 
-const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) || 'https://api.openai.com/v1'
+const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) || 'https://aimf.shop/v1'
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
-export const DEFAULT_IMAGES_MODEL = 'dall-e-3'
+export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
-export const DEFAULT_AIMF_BASE_URL = 'https://aimf.shop/v1'
-export const DEFAULT_AIMF_MODEL = 'gpt-image-2'
-export const DEFAULT_AIMF_PROVIDER_ID = 'aimf-shop'
-export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
+export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
+export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
-export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {
@@ -250,119 +246,12 @@ export function normalizeCustomProviderDefinition(input: unknown, usedIds = new 
   }
 }
 
-export const AIMF_SHOP_CONFIG: CustomProviderDefinition = {
-  id: DEFAULT_AIMF_PROVIDER_ID,
-  name: 'Ai魔方',
-  template: 'http-image',
-  submit: {
-    path: 'images/generations',
-    method: 'POST',
-    contentType: 'json',
-    body: {
-      model: '$profile.model',
-      prompt: '$prompt',
-      size: '$params.size',
-      quality: '$params.quality',
-      output_format: '$params.output_format',
-      moderation: '$params.moderation',
-      output_compression: '$params.output_compression',
-      n: '$params.n',
-    },
-    result: {
-      imageUrlPaths: ['data.*.url'],
-      b64JsonPaths: ['data.*.b64_json'],
-    },
-  },
-  editSubmit: {
-    path: 'images/edits',
-    method: 'POST',
-    contentType: 'multipart',
-    body: {
-      model: '$profile.model',
-      prompt: '$prompt',
-      size: '$params.size',
-      quality: '$params.quality',
-      output_format: '$params.output_format',
-      moderation: '$params.moderation',
-      output_compression: '$params.output_compression',
-      n: '$params.n',
-    },
-    files: [
-      { field: 'image[]', source: 'inputImages', array: true },
-      { field: 'mask', source: 'mask' },
-    ],
-    result: {
-      imageUrlPaths: ['data.*.url'],
-      b64JsonPaths: ['data.*.b64_json'],
-    },
-  },
-}
-
-export const OPENAI_COMPATIBLE_CONFIG: CustomProviderDefinition = {
-  id: DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID,
-  name: 'OpenAI兼容接口',
-  template: 'http-image',
-  submit: {
-    path: 'images/generations',
-    method: 'POST',
-    contentType: 'json',
-    body: {
-      model: '$profile.model',
-      prompt: '$prompt',
-      size: '$params.size',
-      quality: '$params.quality',
-      output_format: '$params.output_format',
-      moderation: '$params.moderation',
-      output_compression: '$params.output_compression',
-      n: '$params.n',
-    },
-    result: {
-      imageUrlPaths: ['data.*.url'],
-      b64JsonPaths: ['data.*.b64_json'],
-    },
-  },
-  editSubmit: {
-    path: 'images/edits',
-    method: 'POST',
-    contentType: 'multipart',
-    body: {
-      model: '$profile.model',
-      prompt: '$prompt',
-      size: '$params.size',
-      quality: '$params.quality',
-      output_format: '$params.output_format',
-      moderation: '$params.moderation',
-      output_compression: '$params.output_compression',
-      n: '$params.n',
-    },
-    files: [
-      { field: 'image[]', source: 'inputImages', array: true },
-      { field: 'mask', source: 'mask' },
-    ],
-    result: {
-      imageUrlPaths: ['data.*.url'],
-      b64JsonPaths: ['data.*.b64_json'],
-    },
-  },
-}
-
 export function normalizeCustomProviderDefinitions(input: unknown): CustomProviderDefinition[] {
   const usedIds = new Set<string>()
   const list = Array.isArray(input) ? input : []
-  
-  const providers = list
+  return list
     .map((item) => normalizeCustomProviderDefinition(item, usedIds))
     .filter((item): item is CustomProviderDefinition => Boolean(item))
-    // 过滤掉输入中的默认配置，确保只使用我们的默认配置
-    .filter(p => p.id !== DEFAULT_AIMF_PROVIDER_ID && p.id !== DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID)
-  
-  // 始终添加我们的默认配置
-  providers.unshift(AIMF_SHOP_CONFIG)
-  usedIds.add(DEFAULT_AIMF_PROVIDER_ID)
-  providers.unshift(OPENAI_COMPATIBLE_CONFIG)
-  usedIds.add(DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID)
-  
-  return providers
 }
 
 export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
@@ -377,22 +266,6 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     apiMode: 'images',
     codexCli: false,
     apiProxy: DEFAULT_OPENAI_API_PROXY,
-    ...overrides,
-  }
-}
-
-export function createDefaultAimfProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
-  return {
-    id: `aimf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-    name: 'Ai魔方',
-    provider: DEFAULT_AIMF_PROVIDER_ID,
-    baseUrl: DEFAULT_AIMF_BASE_URL,
-    apiKey: '',
-    model: DEFAULT_AIMF_MODEL,
-    timeout: DEFAULT_API_TIMEOUT,
-    apiMode: 'images',
-    codexCli: false,
-    apiProxy: false,
     ...overrides,
   }
 }
@@ -412,15 +285,13 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   const savedDraft = providerDrafts[provider]
 
   if (customProvider) {
-    const isAimfShop = customProvider.id === DEFAULT_AIMF_PROVIDER_ID
-    const isOpenAICompatible = customProvider.id === DEFAULT_OPENAI_COMPATIBLE_PROVIDER_ID
     return {
       ...profile,
       provider: customProvider.id,
-      baseUrl: savedDraft?.baseUrl ?? (isAimfShop ? DEFAULT_AIMF_BASE_URL : DEFAULT_BASE_URL),
-      model: savedDraft?.model ?? (isAimfShop ? DEFAULT_AIMF_MODEL : DEFAULT_IMAGES_MODEL),
+      baseUrl: savedDraft?.baseUrl ?? (profile.baseUrl || DEFAULT_BASE_URL),
+      model: savedDraft?.model ?? (profile.model || DEFAULT_IMAGES_MODEL),
       apiMode: savedDraft?.apiMode ?? 'images',
-      codexCli: false,
+      codexCli: savedDraft?.codexCli ?? true,
       apiProxy: false,
       responseFormatB64Json: savedDraft?.responseFormatB64Json,
       providerDrafts,
@@ -430,10 +301,10 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
   return {
     ...profile,
     provider,
-    baseUrl: savedDraft?.baseUrl ?? DEFAULT_BASE_URL,
+    baseUrl: DEFAULT_BASE_URL,
     model: savedDraft?.model ?? DEFAULT_IMAGES_MODEL,
     apiMode: savedDraft?.apiMode ?? profile.apiMode,
-    codexCli: savedDraft?.codexCli ?? profile.codexCli,
+    codexCli: savedDraft?.codexCli ?? false,
     apiProxy: savedDraft?.apiProxy ?? DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: savedDraft?.responseFormatB64Json,
     providerDrafts,
@@ -442,7 +313,7 @@ export function switchApiProfileProvider(profile: ApiProfile, provider: ApiProvi
 
 function normalizeProviderDraft(input: unknown, provider: ApiProvider, customProviderIds: Set<string>): ApiProfileProviderDraft {
   if (!isRecord(input)) return undefined
-  const fallback = provider === DEFAULT_AIMF_PROVIDER_ID ? createDefaultAimfProfile() : createDefaultOpenAIProfile()
+  const fallback = createDefaultOpenAIProfile()
   const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl : undefined
   const model = typeof input.model === 'string' && input.model.trim() ? input.model : undefined
   const apiMode = input.apiMode === 'responses' ? 'responses' : input.apiMode === 'images' ? 'images' : undefined
@@ -450,9 +321,7 @@ function normalizeProviderDraft(input: unknown, provider: ApiProvider, customPro
   if (!knownProvider) return undefined
 
   return {
-    baseUrl: provider === DEFAULT_AIMF_PROVIDER_ID
-      ? baseUrl?.trim().replace(/\/+$/, '') || DEFAULT_AIMF_BASE_URL
-      : baseUrl,
+    baseUrl,
     model,
     apiMode,
     codexCli: typeof input.codexCli === 'boolean' ? input.codexCli : fallback.codexCli,
@@ -473,22 +342,26 @@ function normalizeProviderDrafts(input: unknown, customProviderIds: Set<string>)
 export function normalizeApiProfile(input: unknown, fallback?: Partial<ApiProfile>, customProviderIds = new Set<string>()): ApiProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const rawProvider = typeof record.provider === 'string' ? record.provider : ''
-  const provider: ApiProvider = customProviderIds.has(rawProvider) ? rawProvider : DEFAULT_AIMF_PROVIDER_ID
-  const defaults = provider === DEFAULT_AIMF_PROVIDER_ID ? createDefaultAimfProfile(fallback) : createDefaultOpenAIProfile(fallback)
+  const provider: ApiProvider = customProviderIds.has(rawProvider) ? rawProvider : 'openai'
+  const defaults = createDefaultOpenAIProfile(fallback)
   const apiMode: ApiMode = record.apiMode === 'responses' ? 'responses' : 'images'
-  const rawBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl
+
+  // 对于 Ai 魔方 (openai)，始终使用新的默认 URL，codexCli 默认为 false 但可通过按钮控制
+  const isAiMofangProvider = provider === 'openai'
+  const baseUrl = isAiMofangProvider ? DEFAULT_BASE_URL : (typeof record.baseUrl === 'string' ? record.baseUrl : defaults.baseUrl)
+  const codexCli = typeof record.codexCli === 'boolean' ? record.codexCli : false
 
   return {
     ...defaults,
     id: typeof record.id === 'string' && record.id.trim() ? record.id : defaults.id,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : defaults.name,
     provider,
-    baseUrl: provider === DEFAULT_AIMF_PROVIDER_ID ? rawBaseUrl.trim().replace(/\/+$/, '') || DEFAULT_AIMF_BASE_URL : rawBaseUrl,
+    baseUrl,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : defaults.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : defaults.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : defaults.timeout,
     apiMode,
-    codexCli: Boolean(record.codexCli),
+    codexCli,
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : defaults.apiProxy,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
     providerDrafts: normalizeProviderDrafts(record.providerDrafts, customProviderIds),
@@ -512,33 +385,22 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
   const customProviderIds = new Set(customProviders.map((provider) => provider.id))
-  
-  const defaultAimfProfile = createDefaultAimfProfile()
   const legacyProfile = createDefaultOpenAIProfile({
-    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
+    baseUrl: DEFAULT_BASE_URL, // 强制使用新的默认 URL
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
     model: typeof record.model === 'string' && record.model.trim() ? record.model : DEFAULT_IMAGES_MODEL,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : DEFAULT_API_TIMEOUT,
     apiMode: record.apiMode === 'responses' ? 'responses' : 'images',
-    codexCli: Boolean(record.codexCli),
+    codexCli: typeof record.codexCli === 'boolean' ? record.codexCli : false, // codexCli 默认关闭，可通过按钮控制
     apiProxy: typeof record.apiProxy === 'boolean' ? record.apiProxy : DEFAULT_OPENAI_API_PROXY,
     responseFormatB64Json: record.responseFormatB64Json === true ? true : undefined,
   })
-  
-  let profiles = Array.isArray(record.profiles) && record.profiles.length
+  const profiles = Array.isArray(record.profiles) && record.profiles.length
     ? record.profiles.map((profile) => normalizeApiProfile(profile, undefined, customProviderIds))
-    : [defaultAimfProfile]
-  
-  let activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
+    : [legacyProfile]
+  const activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
-  
-  const hasAimfProfile = profiles.some(p => p.provider === DEFAULT_AIMF_PROVIDER_ID)
-  if (!hasAimfProfile) {
-    profiles.unshift(defaultAimfProfile)
-    activeProfileId = defaultAimfProfile.id
-  }
-  
   const active = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
   return {
@@ -552,7 +414,7 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     customProviders,
     providerOrder: Array.isArray(record.providerOrder) ? record.providerOrder.map(String) : undefined,
     clearInputAfterSubmit: typeof record.clearInputAfterSubmit === 'boolean' ? record.clearInputAfterSubmit : false,
-    persistInputOnRestart: typeof record.persistInputOnRestart === 'boolean' ? record.persistInputOnRestart : true,
+    persistInputAfterRestart: typeof record.persistInputAfterRestart === 'boolean' ? record.persistInputAfterRestart : true,
     reuseTaskApiProfileTemporarily: typeof record.reuseTaskApiProfileTemporarily === 'boolean' ? record.reuseTaskApiProfileTemporarily : false,
     alwaysShowRetryButton: typeof record.alwaysShowRetryButton === 'boolean' ? record.alwaysShowRetryButton : false,
     enterSubmit: typeof record.enterSubmit === 'boolean' ? record.enterSubmit : false,
@@ -567,7 +429,7 @@ export function getCustomProviderDefinition(settings: Partial<AppSettings> | unk
 }
 
 export function getApiProviderLabel(settings: Partial<AppSettings> | unknown, provider: ApiProvider): string {
-  if (provider === 'openai') return 'OpenAI'
+  if (provider === 'openai') return 'Ai 魔方'
   return getCustomProviderDefinition(settings, provider)?.name ?? provider
 }
 
@@ -669,7 +531,7 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.model === DEFAULT_IMAGES_MODEL &&
     profile.timeout === DEFAULT_API_TIMEOUT &&
     profile.apiMode === 'images' &&
-    profile.codexCli === false &&
+    profile.codexCli === true &&
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY
 }
 
@@ -719,7 +581,7 @@ function hasEquivalentApiProfile(existingProfiles: ApiProfile[], importedProfile
   return existingProfiles.some((profile) => getApiProfileConnectionKey(profile) === connectionKey)
 }
 
-function dedupeApiProfiles(profiles: ApiProfile[]): ApiProfile[] {
+function dedupApiProfiles(profiles: ApiProfile[]): ApiProfile[] {
   const seen = new Set<string>()
   return profiles.filter((profile) => {
     const key = getApiProfileDedupKey(profile)
@@ -787,7 +649,7 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
   const normalizedImported = normalizeSettings(importedSettings)
   const imported = normalizeSettings({
     ...normalizedImported,
-    profiles: dedupeApiProfiles(normalizedImported.profiles),
+    profiles: dedupApiProfiles(normalizedImported.profiles),
   })
 
   if (hasOnlyDefaultProfiles(current)) {
@@ -818,16 +680,16 @@ export function mergeImportedSettings(currentSettings: Partial<AppSettings> | un
 }
 
 export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
-  baseUrl: DEFAULT_AIMF_BASE_URL,
+  baseUrl: DEFAULT_BASE_URL,
   apiKey: '',
-  model: DEFAULT_AIMF_MODEL,
+  model: DEFAULT_IMAGES_MODEL,
   timeout: DEFAULT_API_TIMEOUT,
   apiMode: 'images',
   codexCli: false,
-  apiProxy: false,
-  customProviders: [AIMF_SHOP_CONFIG],
+  apiProxy: DEFAULT_OPENAI_API_PROXY,
+  customProviders: [],
   clearInputAfterSubmit: false,
-  persistInputOnRestart: true,
+  persistInputAfterRestart: true,
   reuseTaskApiProfileTemporarily: false,
   alwaysShowRetryButton: false,
   enterSubmit: false,
