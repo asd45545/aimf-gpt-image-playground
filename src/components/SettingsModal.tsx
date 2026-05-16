@@ -1418,7 +1418,7 @@ export default function SettingsModal() {
                         href="https://aimf.shop/register?channel=c_ymo1e8ud"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-600 underline"
+                        className="text-blue-500 hover:text-blue-600"
                       >
                         点我跳转
                       </a>
