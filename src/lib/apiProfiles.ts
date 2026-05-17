@@ -16,11 +16,25 @@ import { readRuntimeEnv } from './runtimeEnv'
 const DEFAULT_BASE_URL = readRuntimeEnv(import.meta.env.VITE_DEFAULT_API_URL) || 'https://aimf.shop/v1'
 const DEFAULT_OPENAI_API_PROXY = readRuntimeEnv(import.meta.env.VITE_API_PROXY_AVAILABLE) === 'true'
 export const DEFAULT_IMAGES_MODEL = 'gpt-image-2'
+export const NANO_BANANA_MODEL = 'nano-banana'
 export const DEFAULT_RESPONSES_MODEL = 'gpt-5.5'
 export const DEFAULT_FAL_BASE_URL = 'https://fal.run'
 export const DEFAULT_FAL_MODEL = 'openai/gpt-image-2'
 export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_API_TIMEOUT = 600
+
+// Banana模型配置（基于Google Gemini）
+export const NANO_BANANA_MODELS = {
+  banana2: 'gemini-3.1-flash-image-preview',
+  'banana-pro': 'gemini-3-pro-image-preview',
+} as const
+
+// 可用的模型列表
+export const AVAILABLE_MODELS = [
+  { value: 'gpt-image-2', label: 'GPT Image 2 (默认)' },
+  { value: 'gemini-3.1-flash-image-preview', label: 'gemini-3.1-flash-image-preview' },
+  { value: 'gemini-3-pro-image-preview', label: 'gemini-3-pro-image-preview' },
+]
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai'])
 const DEFAULT_CUSTOM_PROVIDER_PATHS = {

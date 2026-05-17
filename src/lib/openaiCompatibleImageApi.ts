@@ -221,6 +221,14 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
 
+  // 检测是否是Gemini图片生成模型
+  const isGeminiImageModel = profile.model === 'gemini-3.1-flash-image-preview' || profile.model === 'gemini-3-pro-image-preview'
+
+  // Gemini图片模型使用 /v1/chat/completions 接口
+  if (isGeminiImageModel) {
+    return callChatCompletionsImageApi(opts, profile)
+  }
+
   return profile.apiMode === 'responses'
     ? callResponsesImageApi(opts, profile)
     : callImagesApi(opts, profile)
@@ -680,6 +688,286 @@ async function callCustomHttpImageApi(opts: CallApiOptions, profile: ApiProfile,
   } finally {
     if (timeoutId) clearTimeout(timeoutId)
   }
+}
+
+async function callChatCompletionsImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const n = opts.params.n > 0 ? opts.params.n : 1
+  if (n === 1) {
+    return callChatCompletionsImageApiSingle(opts, profile)
+  }
+
+  const promises = Array.from({ length: n }).map(() => callChatCompletionsImageApiSingle(opts, profile))
+  const results = await Promise.allSettled(promises)
+
+  const successfulResults = results
+    .filter((r): r is PromiseFulfilledResult<CallApiResult> => r.status === 'fulfilled')
+    .map((r) => r.value)
+
+  if (successfulResults.length === 0) {
+    const firstError = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (firstError) throw firstError.reason
+    throw new Error('所有并发请求均失败')
+  }
+
+  const images = successfulResults.flatMap((r) => r.images)
+  const actualParamsList = successfulResults.flatMap((r) =>
+    r.actualParamsList?.length ? r.actualParamsList : r.images.map(() => r.actualParams),
+  )
+  const revisedPrompts = successfulResults.flatMap((r) =>
+    r.revisedPrompts?.length ? r.revisedPrompts : r.images.map(() => undefined),
+  )
+  const rawImageUrls = successfulResults.flatMap((r) => r.rawImageUrls ?? [])
+  const actualParams = mergeActualParams(
+    successfulResults[0]?.actualParams ?? {},
+    images.length === opts.params.n ? { n: opts.params.n } : { n: images.length },
+  )
+
+  return { images, actualParams, actualParamsList, revisedPrompts, ...(rawImageUrls.length ? { rawImageUrls } : {}) }
+}
+
+async function callChatCompletionsImageApiSingle(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {
+  const { prompt, params, inputImageDataUrls } = opts
+  const mime = MIME_MAP[params.output_format] || 'image/png'
+  const proxyConfig = readClientDevProxyConfig()
+  const useApiProxy = shouldUseApiProxy(profile.apiProxy, proxyConfig)
+  const requestHeaders = createRequestHeaders(profile)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), profile.timeout * 1000)
+
+  try {
+    assertImageInputPayloadSize(
+      inputImageDataUrls.reduce((sum, dataUrl) => sum + getDataUrlEncodedByteSize(dataUrl), 0) +
+        (opts.maskDataUrl ? getDataUrlEncodedByteSize(opts.maskDataUrl) : 0),
+    )
+
+    // 构建chat completions格式的请求体
+    const messages: Array<{ role: string; content: string | Array<unknown> }> = [
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ]
+
+    const body = {
+      model: profile.model,
+      messages,
+      max_tokens: 4096,
+    }
+
+    const response = await fetch(buildApiUrl(profile.baseUrl, 'chat/completions', proxyConfig, useApiProxy), {
+      method: 'POST',
+      headers: {
+        ...requestHeaders,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(await getApiErrorMessage(response))
+    }
+
+    const payload = await response.json()
+
+    // 调试：打印原始响应
+    console.log('📦 Gemini API 原始响应:', JSON.stringify(payload, null, 2))
+
+    // 从chat completions响应中提取图片数据
+    const imageResults = parseChatCompletionsImageResults(payload, mime)
+    const actualParams = mergeActualParams(
+      imageResults[0]?.actualParams ?? {},
+    )
+    return {
+      images: imageResults.map((result) => result.image),
+      actualParams,
+      actualParamsList: imageResults.map((result) =>
+        mergeActualParams(result.actualParams ?? {}),
+      ),
+      revisedPrompts: imageResults.map((result) => result.revisedPrompt),
+    }
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function parseChatCompletionsImageResults(payload: unknown, fallbackMime: string): Array<{
+  image: string
+  actualParams?: Partial<TaskParams>
+  revisedPrompt?: string
+}> {
+  const results: Array<{ image: string; actualParams?: Partial<TaskParams>; revisedPrompt?: string }> = []
+
+  console.log('📦 parseChatCompletionsImageResults: 开始解析响应, payload=', payload)
+
+  // 解析chat completions响应
+  if (payload && typeof payload === 'object' && 'choices' in payload) {
+    const choices = (payload as any).choices
+    console.log('📦 parseChatCompletionsImageResults: choices=', choices)
+    if (Array.isArray(choices) && choices.length > 0) {
+      const firstChoice = choices[0]
+      console.log('📦 parseChatCompletionsImageResults: firstChoice=', firstChoice)
+      if (firstChoice?.message) {
+        const content = firstChoice.message.content
+        console.log('📦 parseChatCompletionsImageResults: content类型=', typeof content, '内容=', content)
+
+        // 处理content可能是字符串或数组的情况
+        if (typeof content === 'string') {
+          console.log('📦 parseChatCompletionsImageResults: content是字符串类型')
+          
+          // 【最优先】检查是否包含 Markdown 图片格式 ![]()（云雾API返回的格式）
+          const markdownImageMatch = content.match(/!\[.*?\]\((.*?)\)/)
+          if (markdownImageMatch && markdownImageMatch[1]) {
+            console.log('📦 parseChatCompletionsImageResults: 找到Markdown图片格式')
+            // 直接使用提取到的 data URL，它已经是完整格式了
+            results.push({
+              image: markdownImageMatch[1],
+            })
+          }
+          
+          // 如果没有找到Markdown图片，再检查是否是纯base64字符串
+          if (!results.length && content.length > 100) {
+            console.log('📦 parseChatCompletionsImageResults: 尝试直接作为base64处理')
+            results.push({
+              image: normalizeBase64Image(content, fallbackMime),
+            })
+          }
+          
+          // 如果上面没有成功（或为了兼容其他格式），再尝试解析为JSON
+          if (!results.length) {
+            try {
+              const parsed = JSON.parse(content)
+              console.log('📦 parseChatCompletionsImageResults: 成功解析为JSON=', parsed)
+              
+              // 尝试多种可能的格式
+              if (parsed.b64_json) {
+                results.push({
+                  image: normalizeBase64Image(parsed.b64_json, fallbackMime),
+                })
+              } else if (parsed.image && parsed.image.b64_json) {
+                results.push({
+                  image: normalizeBase64Image(parsed.image.b64_json, fallbackMime),
+                })
+              } else if (parsed.url) {
+                results.push({
+                  image: parsed.url,
+                })
+              } else if (parsed.result && parsed.result.image && parsed.result.image.b64_json) {
+                results.push({
+                  image: normalizeBase64Image(parsed.result.image.b64_json, fallbackMime),
+                })
+              } else if (parsed.images && parsed.images[0] && parsed.images[0].b64_json) {
+                results.push({
+                  image: normalizeBase64Image(parsed.images[0].b64_json, fallbackMime),
+                })
+              } else if (parsed.data && parsed.data[0]) {
+                if (parsed.data[0].b64_json) {
+                  results.push({
+                    image: normalizeBase64Image(parsed.data[0].b64_json, fallbackMime),
+                  })
+                } else if (parsed.data[0].url) {
+                  results.push({
+                    image: parsed.data[0].url,
+                  })
+                }
+              }
+            } catch (e) {
+              // 如果不是JSON，再检查是否是URL
+              if (content.startsWith('http')) {
+                results.push({ image: content })
+              }
+            }
+          }
+        } else if (Array.isArray(content)) {
+          console.log('📦 parseChatCompletionsImageResults: content是数组类型')
+          // 如果是数组，遍历查找图片
+          for (const item of content) {
+            console.log('📦 parseChatCompletionsImageResults: 处理数组项=', item)
+            if (item && typeof item === 'object') {
+              const contentItem = item as any
+              
+              if (contentItem.type === 'image_url' && contentItem.image_url) {
+                console.log('📦 parseChatCompletionsImageResults: 找到image_url类型')
+                const imageUrl = contentItem.image_url
+                if (typeof imageUrl === 'string') {
+                  console.log('📦 parseChatCompletionsImageResults: image_url是字符串')
+                  results.push({ image: imageUrl })
+                } else if (typeof imageUrl === 'object' && 'url' in imageUrl) {
+                  console.log('📦 parseChatCompletionsImageResults: image_url是对象，取url')
+                  results.push({ image: imageUrl.url as string })
+                }
+              } else if (contentItem.type === 'text') {
+                // 如果是文本类型，可能包含JSON格式的图片数据
+                console.log('📦 parseChatCompletionsImageResults: 找到text类型')
+                const textContent = contentItem.text as string
+                if (textContent) {
+                  try {
+                    const parsed = JSON.parse(textContent)
+                    if (parsed.b64_json) {
+                      results.push({
+                        image: normalizeBase64Image(parsed.b64_json, fallbackMime),
+                      })
+                    } else if (parsed.url) {
+                      results.push({ image: parsed.url })
+                    }
+                  } catch {
+                    // 忽略解析错误
+                  }
+                }
+              } else if ('b64_json' in contentItem) {
+                // 直接包含b64_json字段
+                console.log('📦 parseChatCompletionsImageResults: 直接找到b64_json字段')
+                results.push({
+                  image: normalizeBase64Image(String(contentItem.b64_json), fallbackMime),
+                })
+              } else if ('url' in contentItem && typeof contentItem.url === 'string') {
+                console.log('📦 parseChatCompletionsImageResults: 直接找到url字段')
+                results.push({ image: contentItem.url as string })
+              } else {
+                console.log('📦 parseChatCompletionsImageResults: 尝试检查对象中的所有字段')
+                // 尝试递归查找任何可能的图片字段
+                const searchForImages = (obj: any): void => {
+                  if (!obj || typeof obj !== 'object') return
+                  for (const [key, value] of Object.entries(obj)) {
+                    console.log('📦 parseChatCompletionsImageResults: 检查字段', key, '=', value)
+                    if (key.toLowerCase().includes('base64') || key.toLowerCase().includes('b64')) {
+                      if (typeof value === 'string') {
+                        results.push({
+                          image: normalizeBase64Image(value, fallbackMime),
+                        })
+                      }
+                    } else if (key.toLowerCase().includes('url') || key.toLowerCase().includes('image')) {
+                      if (typeof value === 'string') {
+                        if (value.startsWith('http')) {
+                          results.push({ image: value })
+                        }
+                      } else if (typeof value === 'object') {
+                        searchForImages(value)
+                      }
+                    } else if (typeof value === 'object') {
+                      searchForImages(value)
+                    }
+                  }
+                }
+                searchForImages(contentItem)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  console.log('📦 parseChatCompletionsImageResults: 最终找到的results=', results)
+
+  if (!results.length) {
+    const err = new Error('接口没有返回可识别的图片数据，请查看原始响应内容确认服务商实际返回的数据结构。')
+    ;(err as any).rawResponsePayload = JSON.stringify(payload, null, 2)
+    throw err
+  }
+
+  return results
 }
 
 async function callResponsesImageApi(opts: CallApiOptions, profile: ApiProfile): Promise<CallApiResult> {

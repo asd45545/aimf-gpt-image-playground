@@ -65,7 +65,7 @@ export default function SupportPromptModal() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <a
-            href="https://www.ifdian.net/a/cooksleep"
+            href="https://www.ifdian.net/a/aimofan?utm_source=copylink&utm_medium=link"
             target="_blank"
             rel="noopener noreferrer"
             onClick={dismissSupportPrompt}
