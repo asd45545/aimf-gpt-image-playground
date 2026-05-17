@@ -92,7 +92,7 @@ export default function Header() {
           <div className="flex-1 min-w-0 pr-2">
             <h1 className="inline-flex items-start relative">
               <a
-                href="https://github.com/CookSleep/gpt_image_playground"
+                href="https://aimf.shop/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"

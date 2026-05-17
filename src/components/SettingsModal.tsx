@@ -1719,7 +1719,7 @@ export default function SettingsModal() {
             {activeTab === 'about' && (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center pb-8 px-6">
                 <a
-                  href="https://github.com/CookSleep/gpt_image_playground"
+                  href="https://aimf.shop/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex flex-col items-center outline-none"
@@ -1729,7 +1729,7 @@ export default function SettingsModal() {
                   </div>
                   <h4 className="text-[17px] font-bold text-gray-800 dark:text-gray-100">GPT Image Playground</h4>
                   <p className="mt-1.5 text-[13px] text-gray-500 transition-colors group-hover:text-gray-700 dark:text-gray-400 dark:group-hover:text-gray-300">
-                    @CookSleep
+                    Ai魔方
                   </p>
                 </a>
                 
@@ -1739,7 +1739,7 @@ export default function SettingsModal() {
 
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <a
-                    href="https://github.com/CookSleep/gpt_image_playground/issues"
+                    href="https://aimf.shop/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-gray-100/80 px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-200 hover:text-gray-900 dark:bg-white/[0.06] dark:text-gray-300 dark:hover:bg-white/[0.1] dark:hover:text-white"
